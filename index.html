@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🎈 バブルクラッシュ 🎈</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding-top: 20px;
+      height: 100vh;
+      overflow: auto;
+    }
+    .game-container {
+      position: relative;
+      width: 90vw;
+      max-width: 420px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      backdrop-filter: blur(10px);
+      margin-bottom: 20px;
+    }
+    .info {
+      display: flex;
+      justify-content: space-between;
+      color: #fff;
+      font-size: 14px;
+      margin-bottom: 10px;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+    }
+    .danger-bar {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .danger-bar-inner {
+      width: 0;
+      height: 100%;
+      background: #2ed573;
+      transition: width 0.3s, background-color 0.3s;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: rgba(0, 0, 0, 0.1);
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 12px;
+      cursor: pointer;
+    }
+    .instructions {
+      color: #fff;
+      font-size: 12px;
+      opacity: 0.8;
+      margin-top: 10px;
+    }
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      border-radius: 20px;
+      display: none;
+    }
+    .overlay button {
+      margin-top: 15px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 20px;
+      background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .overlay button:hover {
+      transform: scale(1.05);
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <div class="info">
+      <div>スコア: <span id="score">0</span></div>
+      <div>レベル: <span id="level">1</span></div>
+      <div>到達: <span id="reached">0</span>/20</div>
+    </div>
+    <div class="danger-bar">
+      <div class="danger-bar-inner" id="dangerInner"></div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <div class="instructions">
+      タップ/クリックでバブルを破壊！<br />
+      ⭐ ボーナスバブルで到達カウントを1減少 ⭐<br />
+      20個到達でゲームオーバー
+    </div>
+    <div class="overlay" id="gameOver">
+      <h2>ゲームオーバー！</h2>
+      <p>最終スコア: <span id="finalScore">0</span></p>
+      <button onclick="restart()">もう一度</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const levelEl = document.getElementById('level');
+    const reachedEl = document.getElementById('reached');
+    const dangerInner = document.getElementById('dangerInner');
+    const gameOverEl = document.getElementById('gameOver');
+    const finalScoreEl = document.getElementById('finalScore');
+
+    let score = 0, level = 1, reached = 0;
+    let bubbles = [], particles = [];
+    let combo = 0, comboTimer = 0;
+    let spawnRate = 0.02, bonusTimer = 0;
+    let running = true;
+
+    function resizeCanvas() {
+      const container = document.querySelector('.game-container');
+      const w = container.clientWidth;
+      canvas.width = w;
+      canvas.height = w * 1.5;
+    }
+
+    class Bubble {
+      constructor(isBonus = false) {
+        this.isBonus = isBonus;
+        this.radius = isBonus ? 30 : Math.random() * 25 + 15;
+        this.x = Math.random() * (canvas.width - this.radius * 2) + this.radius;
+        this.y = canvas.height + this.radius;
+        this.speed = Math.random() * 1.5 + 0.8;
+        this.color = isBonus ? '#FFD700' : this.randomColor();
+        this.pulse = 0; this.alive = true;
+      }
+      randomColor() {
+        const cols = ['#ff6b6b','#4ecdc4','#45b7d1','#96ceb4','#feca57','#ff9ff3','#54a0ff','#5f27cd'];
+        return cols[Math.floor(Math.random()*cols.length)];
+      }
+      update() {
+        this.y -= this.speed;
+        this.pulse += 0.1;
+        if (this.y < 30 && this.alive) {
+          this.alive = false; if (!this.isBonus) reached++;
+        }
+        if (this.y < -this.radius) this.alive = false;
+      }
+      draw() {
+        const pr = this.radius + Math.sin(this.pulse)*3;
+        const grad = ctx.createRadialGradient(this.x,this.y,0,this.x,this.y,pr);
+        grad.addColorStop(0,this.color);
+        grad.addColorStop(1,this.color + (this.isBonus?'CC':'40'));
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(this.x,this.y,pr,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.4)';
+        ctx.beginPath(); ctx.arc(this.x-pr*0.3,this.y-pr*0.3,pr*0.3,0,Math.PI*2); ctx.fill();
+        if (this.isBonus) {
+          ctx.fillStyle='#fff'; ctx.font='bold 20px Arial'; ctx.textAlign='center';
+          ctx.fillText('⭐',this.x,this.y+7);
+        }
+      }
+      clicked(mx,my) { return Math.hypot(mx-this.x,my-this.y) < this.radius; }
+    }
+
+    class Particle {
+      constructor(x,y,col) { this.x=x; this.y=y; this.vx=(Math.random()-0.5)*8; this.vy=(Math.random()-0.5)*8;
+        this.life=1; this.decay=Math.random()*0.02+0.01; this.color=col; this.size=Math.random()*4+2;
+      }
+      update() { this.x+=this.vx; this.y+=this.vy; this.vy+=0.1; this.life-=this.decay; }
+      draw() { ctx.save(); ctx.globalAlpha=this.life; ctx.fillStyle=this.color;
+        ctx.beginPath(); ctx.arc(this.x,this.y,this.size,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+    }
+
+    function spawn() { if (Math.random()<spawnRate) bubbles.push(new Bubble()); bonusTimer++; if(bonusTimer>600&&Math.random()<0.003){bubbles.push(new Bubble(true)); bonusTimer=0;} }
+
+    function updateUI() {
+      scoreEl.textContent = score; levelEl.textContent = level; reachedEl.textContent = reached;
+      const pct = Math.min((reached/20)*100,100);
+      dangerInner.style.width = pct+'%';
+      dangerInner.style.background = pct>=90?'#ff4757':pct>=70?'#ff6348':pct>=50?'#ffa502':'#2ed573';
+    }
+
+    function loop() {
+      if (!running) return;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      comboTimer>0?comboTimer--:combo=0;
+      spawn();
+      bubbles.slice().forEach((b,i)=>{ b.update(); b.draw(); if(!b.alive) bubbles.splice(i,1); });
+      particles.slice().forEach((p,i)=>{ p.update(); p.draw(); if(p.life<=0) particles.splice(i,1); });
+      updateUI();
+      if(combo>1){ ctx.fillStyle='white'; ctx.font='bold 24px Arial'; ctx.textAlign='center'; ctx.fillText(`コンボ x${combo}!`,canvas.width/2,50); }
+      if(reached>=20) endGame();
+      requestAnimationFrame(loop);
+    }
+
+    function endGame(){ running=false; finalScoreEl.textContent=score; gameOverEl.style.display='flex'; }
+    function restart(){ score=0; level=1; reached=0; combo=0; comboTimer=0; spawnRate=0.02; bonusTimer=0; bubbles=[]; particles=[]; running=true; gameOverEl.style.display='none'; loop(); }
+
+    canvas.addEventListener('click',e=>{
+      if(!running)return;
+      const rect=canvas.getBoundingClientRect();
+      const mx=(e.clientX-rect.left)*(canvas.width/rect.width);
+      const my=(e.clientY-rect.top)*(canvas.height/rect.height);
+      for(let i=bubbles.length-1;i>=0;i--){ const b=bubbles[i]; if(b.clicked(mx,my)){ if(b.isBonus){score+=100; if(reached>0)reached--;}else{combo++; score+=Math.floor(b.radius)*combo; comboTimer=60;} for(let j=0;j<15;j++)particles.push(new Particle(b.x,b.y,b.color)); bubbles.splice(i,1); updateUI(); const newLv=Math.floor(score/500)+1; if(newLv>level)level=newLv; break;} }
+    });
+
+    window.addEventListener('load',()=>{ resizeCanvas(); updateUI(); loop(); });
+    window.addEventListener('resize',()=>{ resizeCanvas(); });
+  </script>
+</body>
+</html>
