@@ -2,20 +2,24 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>🎈 バブルクラッシュ 🎈</title>
   <style>
-    body {
+    html, body {
+      height: 100%;
       margin: 0;
       padding: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+    }
+    body {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       font-family: Arial, sans-serif;
       display: flex;
       justify-content: center;
       align-items: flex-start;
       padding-top: 20px;
-      height: 100vh;
-      overflow: auto;
     }
     .game-container {
       position: relative;
@@ -27,7 +31,6 @@
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
       text-align: center;
       backdrop-filter: blur(10px);
-      margin-bottom: 20px;
     }
     .info {
       display: flex;
@@ -59,6 +62,7 @@
       border: 3px solid rgba(255, 255, 255, 0.3);
       border-radius: 12px;
       cursor: pointer;
+      touch-action: none;
     }
     .instructions {
       color: #fff;
@@ -109,7 +113,7 @@
     </div>
     <canvas id="gameCanvas"></canvas>
     <div class="instructions">
-      タップ/クリックでバブルを破壊！<br />
+      タップ/クリックでバブルを破裂！<br />
       ⭐ ボーナスバブルで到達カウントを1減少 ⭐<br />
       20個到達でゲームオーバー
     </div>
@@ -119,7 +123,6 @@
       <button onclick="restart()">もう一度</button>
     </div>
   </div>
-
   <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -129,16 +132,15 @@
     const dangerInner = document.getElementById('dangerInner');
     const gameOverEl = document.getElementById('gameOver');
     const finalScoreEl = document.getElementById('finalScore');
-
     let score = 0, level = 1, reached = 0;
     let bubbles = [], particles = [];
     let combo = 0, comboTimer = 0;
     let spawnRate = 0.02, bonusTimer = 0;
     let running = true;
+    const popSoundSrc = '001.mp3';
 
     function resizeCanvas() {
-      const container = document.querySelector('.game-container');
-      const w = container.clientWidth;
+      const w = document.querySelector('.game-container').clientWidth;
       canvas.width = w;
       canvas.height = w * 1.5;
     }
@@ -146,86 +148,162 @@
     class Bubble {
       constructor(isBonus = false) {
         this.isBonus = isBonus;
-        this.radius = isBonus ? 30 : Math.random() * 25 + 15;
+        this.radius = isBonus ? 60 : Math.random() * 50 + 30;
         this.x = Math.random() * (canvas.width - this.radius * 2) + this.radius;
         this.y = canvas.height + this.radius;
-        this.speed = Math.random() * 1.5 + 0.8;
+        this.speed = Math.random() * 1.5 + 0.8 + level * 0.1;
         this.color = isBonus ? '#FFD700' : this.randomColor();
-        this.pulse = 0; this.alive = true;
+        this.pulse = 0;
+        this.alive = true;
       }
       randomColor() {
-        const cols = ['#ff6b6b','#4ecdc4','#45b7d1','#96ceb4','#feca57','#ff9ff3','#54a0ff','#5f27cd'];
-        return cols[Math.floor(Math.random()*cols.length)];
+        const cols = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3', '#54a0ff', '#5f27cd'];
+        return cols[Math.floor(Math.random() * cols.length)];
       }
       update() {
         this.y -= this.speed;
         this.pulse += 0.1;
         if (this.y < 30 && this.alive) {
-          this.alive = false; if (!this.isBonus) reached++;
+          this.alive = false;
+          if (!this.isBonus) reached++;
         }
         if (this.y < -this.radius) this.alive = false;
       }
       draw() {
-        const pr = this.radius + Math.sin(this.pulse)*3;
-        const grad = ctx.createRadialGradient(this.x,this.y,0,this.x,this.y,pr);
-        grad.addColorStop(0,this.color);
-        grad.addColorStop(1,this.color + (this.isBonus?'CC':'40'));
+        const pr = this.radius + Math.sin(this.pulse) * 3;
+        const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, pr);
+        grad.addColorStop(0, this.color);
+        grad.addColorStop(1, this.color + (this.isBonus ? 'CC' : '40'));
         ctx.fillStyle = grad;
-        ctx.beginPath(); ctx.arc(this.x,this.y,pr,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle='rgba(255,255,255,0.4)';
-        ctx.beginPath(); ctx.arc(this.x-pr*0.3,this.y-pr*0.3,pr*0.3,0,Math.PI*2); ctx.fill();
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, pr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.beginPath();
+        ctx.arc(this.x - pr * 0.3, this.y - pr * 0.3, pr * 0.3, 0, Math.PI * 2);
+        ctx.fill();
         if (this.isBonus) {
-          ctx.fillStyle='#fff'; ctx.font='bold 20px Arial'; ctx.textAlign='center';
-          ctx.fillText('⭐',this.x,this.y+7);
+          ctx.fillStyle = '#fff';
+          ctx.font = 'bold 20px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('⭐', this.x, this.y + 7);
         }
       }
-      clicked(mx,my) { return Math.hypot(mx-this.x,my-this.y) < this.radius; }
+      clicked(mx, my) {
+        return Math.hypot(mx - this.x, my - this.y) < this.radius;
+      }
     }
 
     class Particle {
-      constructor(x,y,col) { this.x=x; this.y=y; this.vx=(Math.random()-0.5)*8; this.vy=(Math.random()-0.5)*8;
-        this.life=1; this.decay=Math.random()*0.02+0.01; this.color=col; this.size=Math.random()*4+2;
+      constructor(x, y, col) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 8;
+        this.vy = (Math.random() - 0.5) * 8;
+        this.life = 1;
+        this.decay = Math.random() * 0.02 + 0.01;
+        this.color = col;
+        this.size = Math.random() * 4 + 2;
       }
-      update() { this.x+=this.vx; this.y+=this.vy; this.vy+=0.1; this.life-=this.decay; }
-      draw() { ctx.save(); ctx.globalAlpha=this.life; ctx.fillStyle=this.color;
-        ctx.beginPath(); ctx.arc(this.x,this.y,this.size,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.1;
+        this.life -= this.decay;
+      }
+      draw() {
+        ctx.save();
+        ctx.globalAlpha = this.life;
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     }
 
-    function spawn() { if (Math.random()<spawnRate) bubbles.push(new Bubble()); bonusTimer++; if(bonusTimer>600&&Math.random()<0.003){bubbles.push(new Bubble(true)); bonusTimer=0;} }
+    function spawn() {
+      // レベルに応じて出現回数を増加
+      const spawnCount = 1 + Math.floor(level * 0.03);
+      for (let i = 0; i < spawnCount; i++) {
+        if (Math.random() < spawnRate) bubbles.push(new Bubble());
+      }
+      bonusTimer++;
+      if (bonusTimer > 600 && Math.random() < 0.003) {
+        bubbles.push(new Bubble(true));
+        bonusTimer = 0;
+      }
+    }
 
     function updateUI() {
-      scoreEl.textContent = score; levelEl.textContent = level; reachedEl.textContent = reached;
-      const pct = Math.min((reached/20)*100,100);
-      dangerInner.style.width = pct+'%';
-      dangerInner.style.background = pct>=90?'#ff4757':pct>=70?'#ff6348':pct>=50?'#ffa502':'#2ed573';
+      scoreEl.textContent = score;
+      levelEl.textContent = level;
+      reachedEl.textContent = reached;
+      const pct = Math.min((reached / 20) * 100, 100);
+      dangerInner.style.width = pct + '%';
+      dangerInner.style.background = pct >= 90 ? '#ff4757' : pct >= 70 ? '#ff6348' : pct >= 50 ? '#ffa502' : '#2ed573';
     }
 
     function loop() {
       if (!running) return;
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      comboTimer>0?comboTimer--:combo=0;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      comboTimer > 0 ? comboTimer-- : combo = 0;
       spawn();
-      bubbles.slice().forEach((b,i)=>{ b.update(); b.draw(); if(!b.alive) bubbles.splice(i,1); });
-      particles.slice().forEach((p,i)=>{ p.update(); p.draw(); if(p.life<=0) particles.splice(i,1); });
+      bubbles.slice().forEach((b, i) => {
+        b.update();
+        b.draw();
+        if (!b.alive) bubbles.splice(i, 1);
+      });
+      particles.slice().forEach((p, i) => {
+        p.update();
+        p.draw();
+        if (p.life <= 0) particles.splice(i, 1);
+      });
       updateUI();
-      if(combo>1){ ctx.fillStyle='white'; ctx.font='bold 24px Arial'; ctx.textAlign='center'; ctx.fillText(`コンボ x${combo}!`,canvas.width/2,50); }
-      if(reached>=20) endGame();
+      if (combo > 1) {
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`コンボ x${combo}!`, canvas.width / 2, 50);
+      }
+      if (reached >= 20) endGame();
       requestAnimationFrame(loop);
     }
 
-    function endGame(){ running=false; finalScoreEl.textContent=score; gameOverEl.style.display='flex'; }
-    function restart(){ score=0; level=1; reached=0; combo=0; comboTimer=0; spawnRate=0.02; bonusTimer=0; bubbles=[]; particles=[]; running=true; gameOverEl.style.display='none'; loop(); }
+    function endGame() {
+      running = false;
+      finalScoreEl.textContent = score;
+      gameOverEl.style.display = 'flex';
+    }
 
-    canvas.addEventListener('click',e=>{
-      if(!running)return;
-      const rect=canvas.getBoundingClientRect();
-      const mx=(e.clientX-rect.left)*(canvas.width/rect.width);
-      const my=(e.clientY-rect.top)*(canvas.height/rect.height);
-      for(let i=bubbles.length-1;i>=0;i--){ const b=bubbles[i]; if(b.clicked(mx,my)){ if(b.isBonus){score+=100; if(reached>0)reached--;}else{combo++; score+=Math.floor(b.radius)*combo; comboTimer=60;} for(let j=0;j<15;j++)particles.push(new Particle(b.x,b.y,b.color)); bubbles.splice(i,1); updateUI(); const newLv=Math.floor(score/500)+1; if(newLv>level)level=newLv; break;} }
+    function restart() {
+      score = 0; level = 1; reached = 0; combo = 0; comboTimer = 0; spawnRate = 0.02; bonusTimer = 0; bubbles = []; particles = []; running = true; gameOverEl.style.display = 'none'; loop();
+    }
+
+    canvas.addEventListener('click', (e) => {
+      if (!running) return;
+      const rect = canvas.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+      for (let i = bubbles.length - 1; i >= 0; i--) {
+        const b = bubbles[i];
+        if (b.clicked(mx, my)) {
+          // 破裂音再生
+          new Audio(popSoundSrc).play();
+          if (b.isBonus) { score += 100; if (reached > 0) reached--; }
+          else { combo++; score += Math.floor(b.radius) * combo; comboTimer = 60; }
+          for (let j = 0; j < 15; j++) particles.push(new Particle(b.x, b.y, b.color));
+          bubbles.splice(i, 1);
+          updateUI();
+          const newLv = Math.floor(score / 500) + 1;
+          if (newLv > level) level = newLv;
+          break;
+        }
+      }
     });
 
-    window.addEventListener('load',()=>{ resizeCanvas(); updateUI(); loop(); });
-    window.addEventListener('resize',()=>{ resizeCanvas(); });
+    window.addEventListener('load', () => { resizeCanvas(); updateUI(); loop(); });
+    window.addEventListener('resize', () => { resizeCanvas(); });
   </script>
 </body>
 </html>
